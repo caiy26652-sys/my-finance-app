@@ -12,16 +12,15 @@ st.title("💰 我的私人記帳 App (雲端同步版)")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # 2. 讀取資料 (直接從 Secrets 抓網址，請確認試算表分頁名稱是否為 "工作表1")
+# 修改 app.py 這一段
 try:
-    # 如果你的 Google 表格下方標籤是 "Sheet1"，請把下面 "工作表1" 改成 "Sheet1"
     df = conn.read(worksheet="工作表1", ttl=5)
-    
-    # 確保金額欄位是數字格式，避免繪圖出錯
     if not df.empty:
         df['金額'] = pd.to_numeric(df['金額'], errors='coerce').fillna(0)
 except Exception as e:
-    st.error(f"連線失敗，請檢查 Secrets 設定：{e}")
-    df = pd.DataFrame(columns=['日期', '類型', '分類', '金額', '帳戶'])
+    # 這裡會印出真正的錯誤原因
+    st.error(f"發生錯誤了！原因：{e}")
+    st.stop() # 讓程式停在這裡
 
 # --- 側邊欄：輸入介面 ---
 st.sidebar.header("📝 新增收支紀錄")
@@ -93,3 +92,4 @@ if not df.empty:
 
 else:
     st.warning("📭 雲端表格內目前沒有資料。請先從左側側邊欄輸入第一筆交易！")
+
