@@ -9,7 +9,7 @@ st.set_page_config(page_title="雲端記帳本", layout="wide")
 st.title("💰 永久存檔版記帳 App")
 
 # 這裡請貼上你剛剛複製的 Google 表格網址
-SHEET_URL = "在此處貼上你的Google表格網址"
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1tthshxeLmyXpm_mXf4--ppz_hhLR48tA3J85MLfDI0I/edit?usp=sharing"
 
 # 建立連線
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -51,3 +51,4 @@ if not df.empty:
     st.dataframe(df)
 else:
     st.info("目前雲端表格沒有數據，請開始記帳！")
+
