@@ -11,25 +11,28 @@ st.title("💰 我的私人記帳 App (雲端同步版)")
 # 1. 建立 Google Sheets 連線
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# 2. 讀取資料 (請確認你的試算表下方標籤名稱是 "工作表1")
+# 2. 讀取資料 (直接從 Secrets 抓網址，請確認試算表分頁名稱是否為 "工作表1")
 try:
+    # 如果你的 Google 表格下方標籤是 "Sheet1"，請把下面 "工作表1" 改成 "Sheet1"
     df = conn.read(worksheet="工作表1", ttl=5)
-    # 確保金額是數字格式
+    
+    # 確保金額欄位是數字格式，避免繪圖出錯
     if not df.empty:
-        df['金額'] = pd.to_numeric(df['金額'], errors='coerce')
+        df['金額'] = pd.to_numeric(df['金額'], errors='coerce').fillna(0)
 except Exception as e:
-    st.error(f"連線失敗，請檢查 Secrets 或表格名稱：{e}")
+    st.error(f"連線失敗，請檢查 Secrets 設定：{e}")
     df = pd.DataFrame(columns=['日期', '類型', '分類', '金額', '帳戶'])
 
-# --- 側邊欄：新增紀錄 ---
-st.sidebar.header("📝 記一筆")
-date = st.sidebar.date_input("日期", datetime.now())
+# --- 側邊欄：輸入介面 ---
+st.sidebar.header("📝 新增收支紀錄")
+date = st.sidebar.date_input("選擇日期", datetime.now())
 t_type = st.sidebar.selectbox("交易類型", ["支出", "收入"])
-category = st.sidebar.selectbox("分類", ["餐飲", "交通", "購物", "娛樂", "薪水", "其他"])
-amount = st.sidebar.number_input("金額", min_value=0, step=1)
-account = st.sidebar.selectbox("支付帳戶", ["現金", "銀行卡", "悠遊卡"])
+category = st.sidebar.selectbox("分類", ["餐飲", "交通", "購物", "娛樂", "薪水", "居家", "其他"])
+amount = st.sidebar.number_input("輸入金額", min_value=0, step=1)
+account = st.sidebar.selectbox("支付帳戶", ["現金", "銀行卡", "悠遊卡", "信用卡"])
 
-if st.sidebar.button("確認儲存"):
+if st.sidebar.button("確認儲存並同步"):
+    # 建立新的一列資料
     new_row = pd.DataFrame([{
         "日期": str(date),
         "類型": t_type,
@@ -37,54 +40,56 @@ if st.sidebar.button("確認儲存"):
         "金額": amount,
         "帳戶": account
     }])
-    # 合併新舊資料
+    
+    # 合併新資料並寫回雲端
     updated_df = pd.concat([df, new_row], ignore_index=True)
-    # 同步回 Google Sheets
     conn.update(worksheet="工作表1", data=updated_df)
-    st.sidebar.success("✅ 已儲存至 Google 雲端！")
+    
+    st.sidebar.success("✅ 資料已成功寫入 Google 表格！")
     st.rerun()
 
-# --- 主畫面：儀表板 ---
+# --- 主畫面：數據儀表板 ---
 if not df.empty:
     # A. 帳戶餘額統計
     st.subheader("🏦 帳戶即時餘額")
-    income_total = df[df['類型'] == '收入'].groupby('帳戶')['金額'].sum()
-    expense_total = df[df['類型'] == '支出'].groupby('帳戶')['金額'].sum()
-    balance = income_total.add(-expense_total, fill_value=0)
+    income_sum = df[df['類型'] == '收入'].groupby('帳戶')['金額'].sum()
+    expense_sum = df[df['類型'] == '支出'].groupby('帳戶')['金額'].sum()
+    balance = income_sum.add(-expense_sum, fill_value=0)
     
-    # 用橫向小卡片顯示餘額
+    # 顯示各個帳戶餘額卡片
     cols = st.columns(len(balance) if len(balance) > 0 else 1)
     for i, (acc, bal) in enumerate(balance.items()):
         cols[i].metric(acc, f"${int(bal)}")
 
     st.divider()
 
-    # B. 今日支出與明細
+    # B. 今日摘要與圖表
     col_left, col_right = st.columns(2)
     
     with col_left:
-        st.subheader(f"📅 {date} 支出統計")
-        today_data = df[(df['日期'] == str(date)) & (df['類型'] == '支出')]
-        if not today_data.empty:
-            st.write(f"今日總花費：**${int(today_data['金額'].sum())}**")
-            st.dataframe(today_data[['分類', '金額', '帳戶']], use_container_width=True)
+        st.subheader(f"📅 {date} 消費清單")
+        today_df = df[(df['日期'] == str(date)) & (df['類型'] == '支出')]
+        if not today_df.empty:
+            st.write(f"今日總支出：**${int(today_df['金額'].sum())}**")
+            st.table(today_df[['分類', '金額', '帳戶']])
         else:
-            st.info("今天還沒記帳喔！")
+            st.info("今天還沒有支出紀錄喔。")
 
-    # C. 每月分類統計圖
     with col_right:
-        st.subheader("📊 本月支出佔比")
-        month_str = str(date)[:7] # 取得 YYYY-MM
-        month_df = df[(df['日期'].str.contains(month_str)) & (df['類型'] == '支出')]
+        st.subheader("📊 本月支出分佈")
+        # 抓取本月份的資料 (YYYY-MM)
+        current_month = str(date)[:7]
+        month_df = df[(df['日期'].str.contains(current_month)) & (df['類型'] == '支出')]
+        
         if not month_df.empty:
-            fig = px.pie(month_df, values='金額', names='分類', hole=0.4)
+            fig = px.pie(month_df, values='金額', names='分類', hole=0.3)
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.write("本月尚無支出數據")
+            st.write("本月目前還沒有支出數據。")
 
-    # D. 全部歷史紀錄
-    st.divider()
-    with st.expander("🔍 查看完整歷史紀錄"):
+    # C. 查看原始資料
+    with st.expander("🔍 查看所有歷史明細"):
         st.dataframe(df.sort_values(by="日期", ascending=False), use_container_width=True)
+
 else:
-    st.warning("📭 雲端表格目前是空的，請從左側開始輸入第一筆資料！")
+    st.warning("📭 雲端表格內目前沒有資料。請先從左側側邊欄輸入第一筆交易！")
